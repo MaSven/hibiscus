@@ -21,6 +21,7 @@ import org.eclipse.swt.graphics.Color;
 import org.eclipse.swt.graphics.RGB;
 import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.widgets.Composite;
+import org.eclipse.swtchart.Chart;
 import org.eclipse.swtchart.IAxis;
 import org.eclipse.swtchart.IAxisTick;
 import org.eclipse.swtchart.IGrid;
@@ -47,50 +48,51 @@ import de.willuhn.util.ColorGenerator;
 public class LineChart extends AbstractChart<LineChartData>
 {
   private boolean stacked = false;
-  
+
   /**
    * @see de.willuhn.jameica.hbci.gui.chart.Chart#redraw()
    */
   public void redraw() throws RemoteException
   {
-    if (getChart() == null || getChart().isDisposed())
+    final Chart chart = getChart();
+    if (chart == null || chart.isDisposed())
       return;
-    
+    chart.suspendUpdate(true);
     // Cleanup, falls noetig
     {
-      ISeriesSet set = getChart().getSeriesSet();
+      ISeriesSet set = chart.getSeriesSet();
       ISeries[] series = set.getSeries();
-      for (ISeries s:series)
+      for (ISeries s : series)
         set.deleteSeries(s.getId());
     }
-    
+
     ////////////////////////////////////////////////////////////////////////////
     // Neu zeichnen
     List<LineChartData> data = getData();
     int num = 1;
-    for (int i=0;i<data.size();++i)
+
+    int i = 0;
+    for (LineChartData chartData : data)
     {
-      final List<Date> labelLine   = new LinkedList<Date>();
-      final List<Number> dataLine  = new LinkedList<Number>();
-      
-      LineChartData cd      = data.get(i);
-      List list             = cd.getData();
-      String dataAttribute  = cd.getDataAttribute();
-      String labelAttribute = cd.getLabelAttribute();
+      final List<Date> labelLine = new LinkedList<Date>();
+      final List<Number> dataLine = new LinkedList<Number>();
+
+      List list = chartData.getData();
+      String dataAttribute = chartData.getDataAttribute();
+      String labelAttribute = chartData.getLabelAttribute();
 
       if (list == null || list.size() == 0 || dataAttribute == null || labelAttribute == null)
       {
         Logger.debug("skipping data line, contains no data");
         dataLine.add(Double.valueOf(0.0d));
         labelLine.add(new Date());
-      }
-      else
+      } else
       {
-        for (Object o:list)
+        for (Object o : list)
         {
-          Object value = BeanUtil.get(o,dataAttribute);
-          Object label = BeanUtil.get(o,labelAttribute);
-          
+          Object value = BeanUtil.get(o, dataAttribute);
+          Object label = BeanUtil.get(o, labelAttribute);
+
           if (label == null || value == null || !(value instanceof Number) || !(label instanceof Date))
             continue;
 
@@ -99,44 +101,45 @@ public class LineChart extends AbstractChart<LineChartData>
         }
       }
 
-      String name = StringUtils.trimToEmpty(cd.getLabel());
+      String name = StringUtils.trimToEmpty(chartData.getLabel());
       if (name.length() == 0)
       {
         name = num + ".";
         num++;
       }
-      
-      ILineSeries lineSeries = (ILineSeries) getChart().getSeriesSet().createSeries(SeriesType.LINE,name);
+
+      ILineSeries lineSeries = (ILineSeries) getChart().getSeriesSet().createSeries(SeriesType.LINE, name);
       lineSeries.setXDateSeries(labelLine.toArray(new Date[0]));
       lineSeries.setYSeries(toArray(dataLine));
-      
-      
+
       //////////////////////////////////////////////////////////////////////////
       // Layout
-      final de.willuhn.jameica.hbci.gui.chart.LineStyle style = cd.getLineStyle();
+      final de.willuhn.jameica.hbci.gui.chart.LineStyle style = chartData.getLineStyle();
       lineSeries.setLineStyle(style != null ? style.getSwtStyle() : LineStyle.SOLID);
       lineSeries.setSymbolType(PlotSymbolType.NONE);
       lineSeries.enableArea(true); // Flaeche ausmalen
       lineSeries.setAntialias(SWT.ON);
       lineSeries.enableStack(this.isStacked());
-      lineSeries.enableStep(!cd.getCurve());
-      lineSeries.setLineWidth(cd.getLineWidth());
-      lineSeries.setVisibleInLegend(cd.isLegendEnabled());
+      lineSeries.enableStep(!chartData.getCurve());
+      lineSeries.setLineWidth(chartData.getLineWidth());
+      lineSeries.setVisibleInLegend(chartData.isLegendEnabled());
       //
       //////////////////////////////////////////////////////////////////////////
 
       //////////////////////////////////////////////////////////////////////////
       // Farben
-      int[] cValues = cd.getColor();
+      int[] cValues = chartData.getColor();
       if (cValues == null)
         cValues = ColorGenerator.create(ColorGenerator.PALETTE_OFFICE + i);
-      lineSeries.setLineColor(getColor(new RGB(cValues[0],cValues[1],cValues[2])));
-      lineSeries.enableArea(cd.isFilled());
+      lineSeries.setLineColor(getColor(new RGB(cValues[0], cValues[1], cValues[2])));
+      lineSeries.enableArea(chartData.isFilled());
       //
       //////////////////////////////////////////////////////////////////////////
+      i++;
     }
     
-    getChart().getAxisSet().adjustRange();
+    chart.getAxisSet().adjustRange();
+    chart.suspendUpdate(false);
   }
 
   /**
@@ -146,9 +149,9 @@ public class LineChart extends AbstractChart<LineChartData>
   {
     if (getChart() != null)
       return;
-    
+
     this.addFeature(new ChartFeatureTooltip()); // Bei Linecharts per Default Tooltips unterstuetzen
-    this.setChart(new InteractiveChart(parent,SWT.BORDER));
+    this.setChart(new InteractiveChart(parent, SWT.BORDER));
     this.getChart().setLayoutData(new GridData(GridData.FILL_BOTH));
 
     ////////////////////////////////////////////////////////////////////////////
@@ -157,7 +160,7 @@ public class LineChart extends AbstractChart<LineChartData>
     this.getChart().setBackgroundInPlotArea(GUI.getDisplay().getSystemColor(SWT.COLOR_WHITE));
     //
     ////////////////////////////////////////////////////////////////////////////
-    
+
     ////////////////////////////////////////////////////////////////////////////
     // Titel des Charts
     {
@@ -168,7 +171,7 @@ public class LineChart extends AbstractChart<LineChartData>
     }
     //
     ////////////////////////////////////////////////////////////////////////////
-    
+
     ////////////////////////////////////////////////////////////////////////////
     // Legende
     {
@@ -182,13 +185,14 @@ public class LineChart extends AbstractChart<LineChartData>
 
     ////////////////////////////////////////////////////////////////////////////
     // Layout der Achsen
-    Color gray = getColor(new RGB(234,234,234));
-    
+    Color gray = getColor(new RGB(234, 234, 234));
+
     // X-Achse
     {
       IAxis axis = getChart().getAxisSet().getXAxis(0);
       axis.getTitle().setFont(Font.SMALL.getSWTFont());
-      axis.getTitle().setForeground(GUI.getDisplay().getSystemColor(SWT.COLOR_WHITE)); // wenn wir den auch ausblenden, geht die initiale Skalierung kaputt. Scheint ein Bug zu sein
+      axis.getTitle().setForeground(GUI.getDisplay().getSystemColor(SWT.COLOR_WHITE)); // wenn wir den auch ausblenden, geht die initiale Skalierung kaputt.
+                                                                                       // Scheint ein Bug zu sein
 
       IGrid grid = axis.getGrid();
       grid.setStyle(LineStyle.DOT);
@@ -198,7 +202,7 @@ public class LineChart extends AbstractChart<LineChartData>
       tick.setFormat(HBCI.DATEFORMAT);
       tick.setForeground(GUI.getDisplay().getSystemColor(SWT.COLOR_DARK_GRAY));
     }
-    
+
     // Y-Achse
     {
       IAxis axis = getChart().getAxisSet().getYAxis(0);
@@ -207,7 +211,7 @@ public class LineChart extends AbstractChart<LineChartData>
       IGrid grid = axis.getGrid();
       grid.setStyle(LineStyle.DOT);
       grid.setForeground(gray);
-      
+
       IAxisTick tick = axis.getTick();
       tick.setFormat(HBCI.DECIMALFORMAT);
       tick.setForeground(GUI.getDisplay().getSystemColor(SWT.COLOR_DARK_GRAY));
@@ -218,34 +222,39 @@ public class LineChart extends AbstractChart<LineChartData>
     redraw();
     super.paint(parent);
   }
-  
+
   /**
    * Wandelt die Liste in ein Array von doubles um.
-   * @param list die Liste.
+   * 
+   * @param list
+   *          die Liste.
    * @return das Array.
    */
   private double[] toArray(List<Number> list)
   {
     double[] values = new double[list.size()];
-    for (int i=0;i<list.size();++i)
+    for (int i = 0; i < list.size(); ++i)
     {
       values[i] = list.get(i).doubleValue();
     }
     return values;
   }
-  
+
   /**
    * Liefert true, wenn die Linien uebereinandergestapelt werden sollen (stacked).
+   * 
    * @return true, wenn die Linien stacked gezeichnet werden sollen.
    */
   public boolean isStacked()
   {
     return this.stacked;
   }
-  
+
   /**
    * Legt fest, ob die Linien uebereinandergestapelt werden sollen (stacked).
-   * @param b true, wenn die Linien stacked gezeichnet werden sollen.
+   * 
+   * @param b
+   *          true, wenn die Linien stacked gezeichnet werden sollen.
    */
   public void setStacked(boolean b)
   {
